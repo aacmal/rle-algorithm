@@ -13,6 +13,24 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { FileIcon, DownloadIcon } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
+
+// Define interfaces for Rust function returns
+interface CompressionResult {
+  original_size: number;
+  compressed_size: number;
+  compressed_content: string;
+  compression_ratio: number;
+}
+
+interface DecompressionResult {
+  compressed_size: number;
+  decompressed_size: number;
+  decompressed_content: string;
+  expansion_ratio: number;
+}
 
 export default function CompressionApp() {
   return (
@@ -37,13 +55,6 @@ export default function CompressionApp() {
           </TabsContent>
         </Tabs>
       </div>
-      <footer className="p-3">
-        <Card>
-          <CardContent className="text-center font-medium">
-            <p>Copyright © 2025 Acmal. All rights reserved.</p>
-          </CardContent>
-        </Card>
-      </footer>
     </main>
   );
 }
@@ -54,7 +65,7 @@ function CompressionTab() {
   const [compressedSize, setCompressedSize] = useState<number>(0);
   const [originalContent, setOriginalContent] = useState<string>("");
   const [compressedContent, setCompressedContent] = useState<string>("");
-  const [compressedBlob, setCompressedBlob] = useState<Blob | null>(null);
+  const [compressionRatio, setCompressionRatio] = useState<number>(0);
   const [isText, setIsText] = useState<boolean>(true);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -70,54 +81,39 @@ function CompressionTab() {
       setOriginalContent(text);
       setIsText(true);
 
-      // Compress the content
-      const compressed = compressRLE(text);
-      setCompressedContent(compressed);
+      // Call the Rust function for compression
+      const result: CompressionResult = await invoke("compress_rle", {
+        input: text,
+      });
 
-      // Create a blob from the compressed content
-      const blob = new Blob([compressed], { type: "text/plain" });
-      setCompressedBlob(blob);
-      setCompressedSize(blob.size);
+      setCompressedContent(result.compressed_content);
+      setCompressedSize(result.compressed_size);
+      setCompressionRatio(result.compression_ratio);
     } catch (error) {
-      console.error("Error reading file:", error);
+      console.error("Error processing file:", error);
       setIsText(false);
       setOriginalContent("File tidak dapat ditampilkan (bukan teks)");
       setCompressedContent("");
     }
   };
 
-  const compressRLE = (input: string): string => {
-    if (!input) return "";
+  const downloadCompressed = async () => {
+    if (!originalFile || !compressedContent) return;
 
-    let result = "";
-    let count = 1;
-    let current = input[0];
+    try {
+      // Use Tauri's dialog to choose where to save
+      const filePath = await save({
+        defaultPath: `${originalFile.name}.rle`,
+        filters: [{ name: "RLE Files", extensions: ["rle"] }],
+      });
 
-    for (let i = 1; i < input.length; i++) {
-      if (input[i] === current) {
-        count++;
-      } else {
-        result += count + current;
-        current = input[i];
-        count = 1;
+      if (filePath) {
+        // Write the file
+        await writeTextFile(filePath, compressedContent);
       }
+    } catch (error) {
+      console.error("Error saving file:", error);
     }
-
-    result += count + current;
-    return result;
-  };
-
-  const downloadCompressed = () => {
-    if (!compressedBlob) return;
-
-    const url = URL.createObjectURL(compressedBlob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = originalFile ? `${originalFile.name}.rle` : "compressed.rle";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -189,16 +185,16 @@ function CompressionTab() {
                   <p className="text-sm font-medium">Rasio Kompresi:</p>
                   <p className="text-sm text-muted-foreground">
                     {originalSize > 0
-                      ? `${(
-                          100 -
-                          (compressedSize / originalSize) * 100
-                        ).toFixed(
+                      ? `${compressionRatio.toFixed(
                           2
                         )}% (${originalSize} → ${compressedSize} bytes)`
                       : "N/A"}
                   </p>
                 </div>
-                <Button onClick={downloadCompressed} disabled={!compressedBlob}>
+                <Button
+                  onClick={downloadCompressed}
+                  disabled={!compressedContent}
+                >
                   <DownloadIcon className="mr-2 h-4 w-4" />
                   Simpan File
                 </Button>
@@ -217,7 +213,7 @@ function DecompressionTab() {
   const [decompressedSize, setDecompressedSize] = useState<number>(0);
   const [compressedContent, setCompressedContent] = useState<string>("");
   const [decompressedContent, setDecompressedContent] = useState<string>("");
-  const [decompressedBlob, setDecompressedBlob] = useState<Blob | null>(null);
+  const [expansionRatio, setExpansionRatio] = useState<number>(0);
   const [isText, setIsText] = useState<boolean>(true);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -233,14 +229,14 @@ function DecompressionTab() {
       setCompressedContent(text);
       setIsText(true);
 
-      // Decompress the content
-      const decompressed = decompressRLE(text);
-      setDecompressedContent(decompressed);
+      // Call the Rust function for decompression
+      const result: DecompressionResult = await invoke("decompress_rle", {
+        input: text,
+      });
 
-      // Create a blob from the decompressed content
-      const blob = new Blob([decompressed], { type: "text/plain" });
-      setDecompressedBlob(blob);
-      setDecompressedSize(blob.size);
+      setDecompressedContent(result.decompressed_content);
+      setDecompressedSize(result.decompressed_size);
+      setExpansionRatio(result.expansion_ratio);
     } catch (error) {
       console.error("Error reading file:", error);
       setIsText(false);
@@ -249,44 +245,23 @@ function DecompressionTab() {
     }
   };
 
-  const decompressRLE = (input: string): string => {
-    if (!input) return "";
+  const downloadDecompressed = async () => {
+    if (!compressedFile || !decompressedContent) return;
 
-    let result = "";
-    let i = 0;
+    try {
+      // Use Tauri's dialog to choose where to save
+      const filePath = await save({
+        defaultPath: compressedFile.name.replace(".rle", ".txt"),
+        filters: [{ name: "Text Files", extensions: ["txt"] }],
+      });
 
-    while (i < input.length) {
-      let countStr = "";
-      while (i < input.length && /\d/.test(input[i])) {
-        countStr += input[i];
-        i++;
+      if (filePath) {
+        // Write the file
+        await writeTextFile(filePath, decompressedContent);
       }
-
-      const count = Number.parseInt(countStr);
-
-      if (i < input.length && !isNaN(count)) {
-        const char = input[i];
-        result += char.repeat(count);
-        i++;
-      }
+    } catch (error) {
+      console.error("Error saving file:", error);
     }
-
-    return result;
-  };
-
-  const downloadDecompressed = () => {
-    if (!decompressedBlob) return;
-
-    const url = URL.createObjectURL(decompressedBlob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = compressedFile
-      ? compressedFile.name.replace(".rle", "")
-      : "decompressed.txt";
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
   };
 
   return (
@@ -360,10 +335,7 @@ function DecompressionTab() {
                   <p className="text-sm font-medium">Rasio Ekspansi:</p>
                   <p className="text-sm text-muted-foreground">
                     {compressedSize > 0
-                      ? `${(
-                          (decompressedSize / compressedSize) * 100 -
-                          100
-                        ).toFixed(
+                      ? `${expansionRatio.toFixed(
                           2
                         )}% (${compressedSize} → ${decompressedSize} bytes)`
                       : "N/A"}
@@ -371,7 +343,7 @@ function DecompressionTab() {
                 </div>
                 <Button
                   onClick={downloadDecompressed}
-                  disabled={!decompressedBlob}
+                  disabled={!decompressedContent}
                 >
                   <DownloadIcon className="mr-2 h-4 w-4" />
                   Simpan Hasil Dekompres
