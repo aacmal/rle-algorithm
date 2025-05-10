@@ -16,6 +16,7 @@ import { FileIcon, DownloadIcon } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
+import useVersion from "./hooks/use-version";
 
 // Define interfaces for Rust function returns
 interface CompressionResult {
@@ -33,6 +34,8 @@ interface DecompressionResult {
 }
 
 export default function CompressionApp() {
+  const version = useVersion();
+
   return (
     <main className="min-h-screen flex flex-col justify-between font-monserrat">
       <div className="container mx-auto py-10 px-4">
@@ -55,6 +58,11 @@ export default function CompressionApp() {
           </TabsContent>
         </Tabs>
       </div>
+      <footer className="text-center">
+        <p className="shadow mx-auto rounded-lg px-3 py-2 m-2 block w-fit">
+          {version}
+        </p>
+      </footer>
     </main>
   );
 }

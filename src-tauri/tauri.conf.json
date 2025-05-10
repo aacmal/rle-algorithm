@@ -9,6 +9,17 @@
     "beforeDevCommand": "pnpm dev",
     "beforeBuildCommand": "pnpm build"
   },
+  "plugins": {
+    "updater": {
+      "windows": {
+        "installMode": "passive"
+      },
+      "endpoints": [
+        "https://github.com/acml/rle-algorithm/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRFQzExOTFEM0VBMUNEMzUKUldRMXphRStIUm5CVGxiQ2hKdkYxcWFNWDhidVFXWkgzdHc1eGR1eTYxb2J4VlRxMDdyQTJXNTEK"
+    }
+  },
   "app": {
     "windows": [
       {
@@ -24,6 +35,11 @@
     }
   },
   "bundle": {
+    "publisher": "Acml",
+    "category": "Developer",
+    "shortDescription": "RLE Algorithm Application",
+    "longDescription": "A simple application to demonstrate the RLE algorithm.",
+    "createUpdaterArtifacts": true,
     "active": true,
     "targets": "all",
     "icon": [
